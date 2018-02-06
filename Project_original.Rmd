@@ -1,0 +1,551 @@
+---
+title: "ADIDAS Quarterly Sales Forecasting"
+subtitle: 'Schulich School of Business, Fall 2017'
+author: "Kefei Wang"
+date: "December 11, 2017"
+output: html_document 
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# 1. Introduction
+
+## 1.1 Company Background
+
+ADIDAS AG is a multinational corporation, founded and head-quartered in Herzogenaurach, Germany, that designs and manufactures shoes, clothing and accessories. It is the largest sportswear manufacturer in Europe, and the second largest in the world, after Nike.
+
+In the fiscal year of 2016, ADIDAS generated a total revenue of $19,068 million, increased by 18%. In its annual report, ADIDAS projects an annual growth in sale between 11% and 13%
+
+For this paper, I used the past quarterly sales data of ADIDAS to forecast its future sales from Q2 of 2017 to Q3 of 2018, applying Time Series Theories to predict whether the goal of ADIDAS can be reached. 
+
+## 1.2 Data preparation
+
+The data I used for forecasting is ADIDA's quarterly salses data from Q1, 2000 to Q1 2017. For mutivariable forecasting, I also included quearterly US GDP, EU GDP, China GDP, Producer Price Index: Fiber, Yarn, and Thread Mills: Carded Cotton Yarns and NIKE quarterly sales for the same time period.
+
+```{r message=FALSE, include=FALSE}
+library(fpp)
+library(knitr)
+library(vars)
+library(forecastHybrid)
+library(rmarkdown)
+```
+
+### 1.2.1 load data
+```{r}
+#adidas_sales <- read.csv("C:/Schulich/econ6210/Project/adidas_revenue1.csv")
+adidas_sales <- read.csv("C:/Users/kofi2614/Desktop/adidas_revenue1.csv")
+
+### rename data frame
+df=adidas_sales
+
+### define data as time series
+df<-ts(df, start=c(2000,1), end=c(2017,1), frequency = 4)
+
+### extract Adidas sales data
+y=df[,2]
+```
+
+### 1.2.2 set training data, test data
+To evaluate the accuracy of forecasting methods, 20% of the data are held out as the test data set. 
+
+```{r}
+# set training data, test data
+train<-window(y,start=c(2000,1), end=c(2013,4))
+
+# test period
+test<-window(y,start=2014)
+
+# number of steps to forecast
+h = length(test)
+
+# out of sample forecast
+h2 = 6
+```
+
+
+## 1.3 Data Exploration
+
+### 1.3.1 Observing Raw Dataset
+```{r}
+plot(y,main="Adidas Quarterly Sales", lwd=3)
+
+###Centered moving average
+#ma(y,order=9)
+plot(y,main="Adidas Revenue", xlab="year", ylab="$millions", lwd=3)
+lines(ma(y,9),col="orange",lwd=4)
+
+#axis(1,at=seq(2000,2017,4))
+```
+
+Overall, the quarterly sales of ADIDAS have strong growing trends throughout the years except for a visible decrease in the year of 2004. There are also some fluctuations every year which indicates a possible seasonal pattern that increases in size as the level of the series increase.  
+The centered moving average plot removes the influence of seasonality and makes the increasing trend more obvious
+These pattern indicate that a good forecast of this series would need to capture both the trend and seasonality.
+
+### 1.3.2 Seasonality visualization
+```{r}
+seasonplot(y,main="Seasonal plot: Adidas sales",
+           year.labels = TRUE, year.labels.left = TRUE,
+           col=1:20, pch=19,lwd=2)
+monthplot(y, main="Seasonal plot: Adidas sales", 
+          xlab="quarter", ylab = "$million")
+```
+
+Looking at the two plots above, ADIDAS performs differently in different seasons. It is clear that there is a large jump in sales in January each year. One possible explanation for this pattern is that, many popular sports leagues start new seasons in Q3 such as NFL and NBA. As a manufacture for sporting products, ADIDAS's sales have strong correlation with these games. The Seasonal graph also shows that there is a big gap between 2005 and 2006, meaning there was a huge increase between these two years. 
+
+### 1.3.3 Autocorrelation
+```{r}
+lag.plot(y,lags=9, do.lines = FALSE, lwd=4,main="Adidas Quarterly Sales")
+```
+
+The Scatter plots above shows that the data set have a strong linear relationship with its lags. 
+
+```{r}
+Acf(y, lwd=5, main="Adidas QUarterly Sales")
+#Pacf(y, lwd=3)
+```
+
+The ACF graph indicates a strong trend component of the dataset. Although the tend pattern is getting weak as the number of lags increases, it is still significant when the lag is as large as 20. Additionally, r4, r8, r12 and r16 is slightly higher than their neighbors. This is because the seasonal pattern of the data: the peaks tend to be four quarters apart (which is the Q3 of each year)
+
+## 1.4 Summary
+Looking at the raw dataset, ADIDAS sales have a strong seasonal and increasing trend pattern. Out of four quarters, the third quarter generally has better performance. It also has a strong correlation with its lagged data. 
+
+
+# 2. Simple Forecasting Methods
+
+## 2.1 mean, naive, naive method
+```{r}
+fit.mean=meanf(train,h=h)
+fit.naive=naive(train,h=h)
+fit.snaive=snaive(train,h=h)
+
+# plot with forecasts and actual values
+plot(fit.mean, PI=FALSE,
+     main="Forecasts for quarterly")
+lines(fit.naive$mean,col=2)
+lines(fit.snaive$mean,col=3)
+lines(y)
+legend("topleft",lty=1,col=c(4,2,3),
+       legend=c("Mean method","Naive method","Seasonal naive method"),bty="n")
+
+
+```
+
+Comparing the forecasted data with test data, it is easy to conclude that neither Mean method nor naïve method can fit the test data well as they do not consider the effect of trend and seasonal patterns. Seasonal Naïve works well in the first two forecasting quarters as it follows the seasonal patter. However, as time series processes, the gap is getting bigger due to the increasing trend. 
+
+## 2.2 Linear Trend Method
+```{r}
+reg <- tslm(train ~ trend)
+fit.tslm=forecast(reg, h=h,level=c(80,95))
+summary(fit.tslm)
+plot(fit.tslm, ylab="Adidas Quarterly Sales",
+     xlab="t")
+lines(fitted(reg),col="blue")
+lines(y)
+res.tslm <- ts(resid(fit.tslm))
+acf(res.tslm)
+###trend & seasonal
+tps <- tslm(train ~ trend + season)
+fit.lmts = forecast(tps, h=h)
+plot(fit.lmts)
+lines(y)
+res.lmts <- ts(resid(fit.lmts))
+acf(res.lmts)
+```
+
+Based on Linear Trend Model, the forecasted quarterly sales = 1040.73 + 47.06t. It forms a straight line which perfectly catches the increasing trend pattern. 
+By adding seasonality to the model, the forecasting looks even batter in the plot as it is almost overlapping with the test data. 
+
+Looking at the ACF plots of both models, there are still some lags that are significant. It reveals that some autocorrelations are still not explained in the regression model and remain in the residuals, making the models have larger intervals.  
+
+# 3. Time Series Decomposition
+
+In this Paper, I chose STL model to decompose the time series data.
+
+### 3.1.1 STL Decomposition
+```{r}
+y.stl <- stl(train, t.window=15, s.window="periodic", robust=TRUE)
+plot(y.stl)
+```
+
+Looking at the y.stl plot, the seasonal component and trend component are both pretty strong. Notice that seasonal component changes very slowly over time, meaning that throughout the years the seasonality have very similar patterns. The trend component indicates that the sales are increasing over time except for year 2008 where the plot is relatively flat. 
+
+What's more, from the gray bar on the right side of each panel, seasonal component shows the longest bar, indicating that seasonal component has the smallest variance. And obviously trend component has the largest variance. This finding can be very important for selecting the forecasting methods. Although the seasonal and trend components are both strong, as trend component has larger variance, the forecasting methods that consider trending pattern will generally work better than forecasting methods that consider seasonal pattern. We can verify this assumption by the following forecasting methods. 
+
+### 3.1.2 STL Forecasting
+```{r}
+fit.stl <- forecast(y.stl, method="rwdrift", h=h)
+summary(fit.stl)
+plot(fit.stl)
+lines(y)
+```
+
+The model uses STL and random work drift to forecast.Forecasts of STL objects are obtained by applying a non-seasonal forecasting method to the seasonally adjusted data and re-seasonalizing using the last year of the seasonal component.The plot shows that the forecast follows the seasonal component pretty well but does not include trend component 
+
+## 3.2 Exponential Smoothing
+
+In Exponential Smoothing, we are using different forecasting methods catch trend component, seasonal component or both. By comparing these methods, we can see how trend component influence the accuracy of forecasting more than seasonal component. 
+
+### 3.2.1 Simple Exponential Smoothing
+```{r}
+fit.expo <- ses(train, h = h)
+summary(fit.expo)
+plot(fit.expo)
+lines(y)
+```
+
+As we know the simple exponential smoothing has only one component: level. So from the forecasting we can see a flat straight line. This method is suitable for forecasting data with no trend or seasonal pattern. However, from our dataset the trend and seasonality are both very strong. So the forecasting plot looks as bad as Mean or Naïve method. 
+Checking the R Console we can find that alpha is equal to 0.4259, meaning that a weight of 42.59% is assigned to the last time series data of the training data. And the initial level is 1465.93.
+ 
+
+### 3.2.2 Holt's Linear Trend  Method
+
+```{r}
+fit.hlinear <- holt(train, h=h)
+summary(fit.hlinear)
+plot(fit.hlinear, main = "Holt's Linear Trend")
+lines(y)
+```
+
+Holt's Linear method adds trend as another smoothing parameter, which makes it performs much better than Simple Exponential Smoothing.  Looking at the plot, the forecasting follows the increasing trend with a straight line. However, the slop my not big enough as the gap between forecasting and test data is getting bigger. So the trending parameter does not fit enough. A more severe trending should be used. 
+The alpha value of 0.3099 is smaller than alpha of simple exponential smoothing, which indicates that by adding trend smoothing parameter, the effect of most recent data value has been reduced. Beta value (1e-04) is extremely small, meaning that more weights are assigned to trend of lagged data instead of recent data. The initial level and trend are 1418.0798 and 40.8537 respectively. 
+
+### 3.2.3 Holt's Exponential Trend Method
+
+```{r}
+fit.het <- holt(train, exponential=TRUE, h=h)
+summary(fit.het)
+plot(fit.het)
+lines(y)
+```
+
+Compared with Holt's Linear Trend Method, Holt's Exponential Trend Method has a larger slope which follows the increasing trend of test data better. The reason is that Holt's Exponential Trend allows level and trend to be multiplied rather than added, which tends to generate more extreme forecasting.
+Looking at the R Console, the alpha continues reducing to 0.2989, the beta value remains that same as the one in Holt's Linear Trend. The initial level is 1456.1089 and the initial growth rate is 1.0165. although the b0 value is much smaller, this method generates larger forecasting for the trend is exponential rather than linear, so that the forecasts project a constant growth rate instead of constant slope. 
+It is reasonable to guess that Holt's Exponential Trend Method will be listed as one of the best forecasting models as it closely follows the trend component of data.
+
+### 3.2.4 Holt's Damped Trend Method
+```{r}
+fit.hdt <- holt(train, damped=TRUE, h=h)
+fit.hdtm <- holt(train, damped=TRUE, exponential = TRUE, h=h)
+plot(fit.hdt, col = 4)
+lines(fit.hdtm$mean, col = 2)
+lines(y)
+legend("topleft",lty=1,col=c(4,2),
+       legend=c("Addictive","Multiplicative"),bty="n")
+
+```
+
+Considering the strong increasing trend component of dataset, the Damped method is by default not suitable as it "damped" the trend to a flat line to avoid over-forecast. Checking the forecast plot, the conclusion agrees with previous statement. The phi value of 0.8 weakens the influence of trend addictively or multiplicatively and decreases the slope. Neither Addictive or multiplicative Damped method fits the test data very well.
+
+### 3.2.5 Holt Winter's  method
+```{r}
+fit.hwm <- hw(train, seasonal="multiplicative", h=h) 
+fit.hwa <- hw(train, seasonal="additive", h=h) 
+plot(fit.hwa, col = 4)
+lines(fit.hwm$mean, col = 2)
+lines(y)
+legend("topleft",lty=1,col=c(4,2),
+       legend=c("Addictive","Multiplicative"),bty="n")
+#plot(fit.hwm)
+#lines(y)
+```
+
+Holt's Winter adds an additional smoothing parameter to capture seasonality. It should presumably work better than any other methods as it counts both trend component and seasonal component. However, the plots for both addictive and multiplicative model indicates a potential problem that the trends are not as extreme as the test set which may harm the model. 
+
+### 3.2.6 ETS  Method
+```{r}
+y.ets <- ets(train, model="ZZZ") 
+fit.ets <- forecast(y.ets, h=h)
+plot(fit.ets)
+lines(y)
+```
+
+For ETS Method, the best model is generated by system itself. Based on the title of plots, we can see that the best model found by system is (A, N, A). It means that the model has addictive error and addictive seasonality, which does not conform with the strong trend component we observed from the time series decomposition. The plot reveals the same problem. It captures the seasonality perfectly but no trend is included. It is possible that this model can do no better than the seasonal naïve method. 
+
+### 3.2.7 Summary
+
+In conclusion, out of all exponential smoothing method, the Holt's Linear, Holt's Exponential and Holt's Winters methods, which capture trend parameter, may have better performance
+
+## 3.3 ARIMA Model
+### 3.3.1 Stationarity
+```{r}
+y.diff1 = diff(train, differences = 1)
+adf.test(y.diff1, alternative = "stationary")
+plot(y.diff1)
+y.diff2 = diff(train, differences = 2)
+adf.test(y.diff2, alternative = "stationary")
+plot(y.diff2)
+```
+
+It is easy to conclude that the raw data set is not stationary. By doing a one degree differencing, the plot looks much more stationary. However, the ADF test shows that the p-value is not significant, indicating the data is not stationary. By doing two degrees differencing, the data is finally stationary. 
+
+### 3.3.2 Autoregressive and Moving average
+```{r}
+Acf(train)
+Pacf(train)
+```
+
+Looking at the ACF plot, there is a decaying trend. 
+There are 2 spikes on lag 4 of PACF plot, and there is no spike thereafter. 
+The two facts above gives us an intuitive guess that the proper ARIMA model should be an ARIMA(2, 2, 0) model. 
+
+
+### 3.3.3 Auto ARIMA Model
+```{r}
+y.arima <- auto.arima(train)
+fit.arima <- forecast(y.arima, h=h)
+summary(fit.arima)
+plot(fit.arima)
+lines(y)
+```
+
+However, the auto.arima model tells us a different story. The model system selects a 3 order Autoregression model with seasonality. The non-seasonal component of the model can be calculated as : yt = 42.2554 + 0.9518*y't-1 - 0.0746*y't-2 - 0.2485y't-3. 
+Looking at the plot of forecasts, the ARIMA model fits the test dataset pretty well except for a small gap in trend.
+
+
+### 3.3.4 Arima method for log(y)
+```{r}
+y.arima.lambda <- auto.arima(train, lambda=0)
+fit.alog <- forecast(y.arima.lambda)
+plot(fit.alog)
+lines(y)
+```
+
+Taking logs to reduce the variability of the model, we can see that the forecast is flatter then the original ARIMA model and the system basically generates a model of random walk with no constant. The plot does not catch the trend of data, which can influence the accuracy. 
+
+# 4. Advanced Forecasting Method
+
+Here are some advanced forecasting methods being used. Because of the relatively small data size, these forecasting method do not perform better than other models. 
+
+### 4.1 NNTAR
+```{r}
+net <- nnetar(train)
+fit.ann <- forecast(net, h=h)
+summary(fit.ann)
+plot(fit.ann)
+lines(y)
+```
+
+### 4.2 BATS
+```{r}
+tbats = tbats(train)
+fit.bats <- forecast(tbats, h=h)
+plot(fit.bats)
+lines(y)
+
+```
+
+### 4.3 Hybrid
+```{r}
+hmod <- hybridModel(train, lambda = TRUE)
+fit.hmod <- forecast(hmod, h=h)
+plot(fit.hmod)
+lines(y)
+
+```
+
+
+# 5. Forecast Accuracy Summary
+### 5.1 Building Table
+```{r}
+##########################################################
+# accuracy measures
+##########################################################
+
+a.mean=accuracy(fit.mean, test)
+a.naive=accuracy(fit.naive,test)
+a.snaive=accuracy(fit.snaive,test)
+a.expo=accuracy(fit.expo, test)
+a.hlinear=accuracy(fit.hlinear, test)
+a.het=accuracy(fit.het, test)
+a.hdt=accuracy(fit.hdt, test)
+a.hdtm=accuracy(fit.hdtm, test)
+a.hwa=accuracy(fit.hwa, test)
+a.hwm=accuracy(fit.hwm, test)
+a.ets=accuracy(fit.ets, test)
+a.stl=accuracy(fit.stl, test)
+a.tslm=accuracy(fit.tslm, test)
+a.lmts=accuracy(fit.lmts, test)
+a.arima=accuracy(fit.arima, test)
+a.alog=accuracy(fit.alog, test)
+a.ann=accuracy(fit.ann, test)
+a.bats=accuracy(fit.bats, test)
+a.hmod=accuracy(fit.hmod, test)
+
+a.table<-rbind(a.mean, a.naive, a.snaive, a.expo, a.hlinear, a.het, a.hdt, a.hdtm, a.hwa, a.hwm, a.ets, a.stl, a.tslm, a.lmts, a.arima, a.alog, a.ann,
+               a.bats, a.hmod)
+
+row.names(a.table)<-c('Mean training','Mean test', 'Naive training', 'Naive test', 'S. Naive training', 'S. Naive test' ,
+                        'exponential smothing training', 'exponential smoothing test',"Holt's Linear trainning", "Holt's Linear test",  "Holt's exponential training", "Holt's exponential test", "Holt's Damped trainning", "Holt's Damped Test", "Holt's Damped exponential trainning", "Holt's Damped exponential Test",
+                      'Holt-Winters addictive trainning', 'Holt-Winters addictive test','Holt-Winters multiplicative trainning', 'Holt-Winters multiplicative test', 'ETS training', 'ETS test', 'STL trainning', 'STL test', 'linear trend trainning', 'linear trend test', 'trend & seasonal trainning', 'trend & seasonal test', 
+                      'ARIMA training', 'ARIMA test', 'Log Arima trainning', 'Log Arima test', 'NNETAR trainning', 'NNETAR test', 'BATS trainning', 'BATS test', 'Hybrid trainning', 'Hybrid test')
+                     
+# order the table according to MASE
+a.table<-as.data.frame(a.table)
+a.table<-a.table[order(a.table$MASE),]
+
+
+#Summarize table
+kable(a.table, caption="Forecast accuracy")
+```
+
+Looking at the Accuracy table, the most accurate forecasting method is Hoot's Exponential method, followed by Log ARIMA and ARIMA model. Linear trend model including seasonal and pure linear trend model ranks No.4 and No.5. 
+As the dataset shows strong pattern in both trend and seasonality, it is actually pretty surprising that the best model is Linear Exponential method, a model that only consider trend smoothing. One possible explanation is that, although the seasonal pattern of the data is very strong and obvious, its variance is too small. The small variance of seasonal component makes it influence the forecast much less significant then trend component. On the other hand, the increasing trend in the test dataset is so extreme that only Holt's Exponential method which captures the trend multiplicatively can follow. Notice that the worst 6 methods, ETS, Seasonal Naïve method, exponential smoothing method, Holt's Damped Exponential method, Naïve method and Mean method are methods that do not take trend into consideration. Although ETS and Seasonal Naïve method capture seasonality, they still ranked 5th and 6th worst among all forecasts. All of these observation proves that it is the trend that impacts the most in the forecasting. 
+
+
+### 5.2 Forecasting using Holt's Exponential Method
+```{r}
+
+forc.all <- holt(y, exponential=TRUE, h=6)
+plot(forc.all)
+forc.all
+```
+
+### 5.3 Summary
+
+The forecast for the future using Holt's Exponential Method is shown above. As expected, the quarterly sales will continue increase over time. 
+Suming the forecast sales from 2017 Q2 to 2017 Q4 with the 2017 Q1 data, the predicted annual sales in 2017 is $21,815 million, showing a 14.41% increase comparing with last year. So the outlook of ADIDAS in 2016 seems to be reasonable. 
+
+# 6. Multi-variable Forecasting
+
+The criteria for selecting the variables to be included into the Vector Autoregression model is based on the information of ADIDAS. As ADIDAS is a multi-national corporation, I selected US GDP to represent the economical dimension. The core business of ADIDA is manufacturing shoes, clothing and accessories, indicating that yarn and cotton can be its major raw material. So I select the Producer Price Index: Fiber, Yarn, and Thread Mills: Carded Cotton Yarns as the industrial variable. And of course as the second largest sportswear manufacture in the world, it is reasonable to include NIKE, its main competitor into the model. 
+
+## 6.1 Vector autoregressions - Whole Model
+### 6.1.1 Model Building
+```{r}
+vardata = log (df[,c(3,6,7,2)])
+colnames(vardata) = c( "US_GDP", "Price_Index", "NIKE", "Adidas")
+plot(vardata, main = "VAR data", xlab = "")
+vs = VARselect(vardata, lag.max =9, season =4)
+vs 
+vs$selection[2]
+var.1 = VAR(vardata, p=vs$selection[2], season =4)
+roots(var.1)
+serial.test(var.1, lags.pt = 16, type = "PT.adjusted")
+acf(residuals(var.1), type="partial", lag.max=10)
+Acf(residuals(var.1)[,1], main="ACF of US GDP equation residuals")
+Acf(residuals(var.1)[,2], main="ACF of Price Index equation residuals")
+Acf(residuals(var.1)[,3], main="ACF of NIKE equation residuals")
+Acf(residuals(var.1)[,4], main="ACF of Adidas equation residuals")
+
+```
+
+Notice that AIC, HQ, SC and FPE provide different numbers of lags. so we select 2 as the lag length. As AIC tend to overfit, I choose SC as the length of lags. Also the roots are all smaller than 1, and the residuals are randomly plotted in the ACF plots with little spikes, so the model looks good
+
+### 6.1.2 Granger Causality
+```{r}
+causality(var.1, cause= c("US_GDP", "Price_Index", "NIKE" ))
+```
+
+Looking at the causality between target variable and other variables in the model. As the p-value in both Granger and Instant are larger than 0.05, it shows that there is no significant causality between either of US GDP, Price Index and NIKE's sales and ADIDAS sales.
+
+### 6.1.3 Impulse Responses
+```{r}
+var1a.irf <- irf(var.1,  n.ahead = 16, boot = TRUE,  runs=100, seed=99, cumulative=TRUE)
+
+par(mfrow=c(2,2))
+plot( irf(var.1, response = "Adidas", n.ahead = 24, boot = TRUE) , plot.type = "single")
+
+par(mfrow=c(1,1))
+
+
+```
+
+For Price Index and NIKE Sales, notice that 0 line is inside the 95% confidence interval lines all the time. It means that neither them has a significant influence on change of ADIDAS sales with in all time lags. However, US GDP surprisingly has a significant influence on change of ADIDAS sales starting from lag 2 where the bottom level of confidence interval goes above the baseline. 
+
+### 6.1.4 Forecast Error Variance Decompositions
+```{r}
+fevd(var.1, n.ahead = 16)
+
+```
+
+The conclusion generated from FEVD is to some extent consistent with the conclusion from impulse response. It shows that as the number of lags increases, bigger and bigger part of ADIDA sales is explained by US GDP. When lag equals 16, 54% of the sales is explained by US GDP, which is even more significant than the lag of ADIDAS sales itself.
+
+### 6.1.5 Forecast
+```{r}
+var.fc = predict(var.1, n.ahead= 6)
+plot(var.fc)
+#one period forecast of Magna
+exp (var.fc$fcst$Adidas)
+```
+
+Forecast ADIDAS sales by 6 periods, ADIDAS sale from 2017:2 to 2018:3 are shown above, within 95% confidence.
+From this forecast, the total sales in 2017 is $22,379 million. The increase rate compared with the year 2016 is 17.36%, which is larger than ADIDAS's own prediction. Also note that the forecast in this model is even more optimal than the forecast using Holt's Exponential method.
+
+## 6.2 Vector autoregressions - NIKE Sales
+
+As ADIDAS's main competitor, it is important to check to what extent NIKE's sales will influence the data. To magnify the impact of NIKE's sales, a new VAR model is built including only NIKE and ADIDAS's sales. In this case, the influences of other variable such as US GDP and Producer Price Index are removed and we can check the significance of NIKE sales more clearly.
+
+### 6.2.1 Model Building
+```{r}
+vardata_NIKE = log (df[,c(7,2)])
+colnames(vardata_NIKE) = c("NIKE", "Adidas")
+plot(vardata_NIKE, main = "VAR data", xlab = "")
+vs_NIKE = VARselect(vardata_NIKE, lag.max =9, season =4)
+vs_NIKE
+vs_NIKE$selection[2]
+var.2 = VAR(vardata_NIKE, p=vs_NIKE$selection[3], season =4)
+roots(var.2)
+serial.test(var.2, lags.pt = 16, type = "PT.adjusted")
+acf(residuals(var.2), type="partial", lag.max=10)
+Acf(residuals(var.2)[,1], main="ACF of NIKE equation residuals")
+Acf(residuals(var.2)[,2], main="ACF of Adidas equation residuals")
+```
+
+Here I use 1 as the number of lag. Again the roots are all smaller than 1 and the residuals are randomly plotted in the ACF plot with a few spikes. 
+
+### 6.2.2 Granger Causality
+```{r}
+causality(var.2, cause= c("NIKE" ))
+```
+
+This time the p-value of Granger section is much smaller than 0.05, indicating that NIKE sales Granger causes ADIDAS sales. In other words, the movements in NIKE sales precede movements in ADIDAS sales. 
+
+### 6.2.3 Impulse Response
+```{r}
+var2a.irf <- irf(var.2,  n.ahead = 16, boot = TRUE,  runs=100, seed=99, cumulative=TRUE)
+par(mfrow=c(2,2))
+plot( irf(var.2, response = "Adidas", n.ahead = 24, boot = TRUE) , plot.type = "single")
+par(mfrow=c(1,1))
+```
+
+The impulse response shows that the shock of NIKE sales will affect the response of ADIDAS starting from lag 1, where the bottom bound of 95% confidence interval begins to position above the baseline. 
+
+### 6.2.4 Forecast Error Variance Decompositions
+```{r}
+fevd(var.2, n.ahead = 16)
+```
+
+The FEVD shows that NIKE sales have a strong relationship with ADIDAS sales. When lag equals to 16, over 50% or ADIDAS sales is explained by NIKE sales. 
+
+After excluding the other variables, the significance of competitor's effect is magnified. It shows that NIKE's sales has a very strong relation ship with ADIDAS sales. 
+
+### 6.2.5 Forecast
+```{r}
+var.fc_2 = predict(var.2, n.ahead= 6)
+plot(var.fc_2)
+#one period forecast of Magna
+exp (var.fc_2$fcst$Adidas)
+```
+The forecast of ADIDAS sales using this VAR model is shown above. It is a little bit conservative than the previous VAR model as the total sales in 2017 is only $21,927 million. However, it still increase the sales by 15%, outperforming ADIDAS's forecast
+
+# 7. Conclusion
+After forecasting with univariate and multivariate models, three forecasting are generated. For each of these forecast, the annual sales of ADIDAS will have greater increase rate than 13%, showing that the outlook of ADIDAS in 2016 was reasonable and conservative. 
+
+For the univariate model, Holt's Exponential Trend method is used. Basically, this model relies solely on the increasing trend of ADIDAS sales. If the user of this paper is confidence that ADIDAS's business will continue growing under the same rate as recent few years, this forecasting will perform pretty well. The forecast sales can be used to help ADIDAS budget its future revenue and cost. It can also be an evaluator of business performance. If the actual sale is less than the forecast sale, it shows that the expansion of ADIDAS's business is slowing down as the growth rate is not as big as now. 
+
+The forecast of the first VAR model including US GDP, Price Index and NIKE Sales is helpful if someone is considering multiple indicators of ADIDAS's business. Note that out of 3 variables, US GDP has the most significant relationship with our target variable. It means that in this model, the quarterly sales of ADIDAS heavily relies on the economic performance of USA. If in future ADIDAS shifts its main segment of business to other areas (eg: Asia), this forecast model will be less accurate.
+
+The second VAR model considering only NIKE sales reveals the strong relationship between these two companies. This model can be used to forecast the sales of both NIKE and ADIDAS assuming this relationship continues. 
+
+
+
+### Reference
+https://www.adidas-group.com/en/investors/financial-reports/#/2016/
+
+https://en.wikipedia.org/wiki/Adidas
+
+https://www.otexts.org/fpp
+
+https://fred.stlouisfed.org/
